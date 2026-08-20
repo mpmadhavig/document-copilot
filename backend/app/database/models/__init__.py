@@ -1,9 +1,13 @@
 """Public model registry imported by Alembic and application code."""
 
 from app.database.models.base import Base
-from app.database.models.chats import ChatMessage, ChatThread, MessageCitation
-from app.database.models.documents import DocumentChunk, SourceDocument
-from app.database.models.users import User
+from app.database.models.chat_message import ChatMessage
+from app.database.models.chat_thread import ChatThread
+from app.database.models.document_chunk import DocumentChunk
+from app.database.models.message_citation import MessageCitation
+from app.database.models.message_role import MessageRole
+from app.database.models.source_document import SourceDocument
+from app.database.models.user import User
 
 __all__ = [
     "Base",
@@ -11,6 +15,7 @@ __all__ = [
     "ChatThread",
     "DocumentChunk",
     "MessageCitation",
+    "MessageRole",
     "SourceDocument",
     "User",
 ]

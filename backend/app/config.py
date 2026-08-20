@@ -3,7 +3,14 @@
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    PostgresDsn,
+    SecretStr,
+    computed_field,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +37,17 @@ class Settings(BaseSettings):
     openai_embedding_dimensions: int = Field(gt=0)
 
     allowed_origins: Annotated[list[AnyHttpUrl], NoDecode]
+
+    @computed_field
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """Use psycopg 3 when SQLAlchemy opens the direct database connection."""
+        url = str(self.database_url)
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+psycopg://", 1)
+        return url
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
