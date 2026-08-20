@@ -84,10 +84,10 @@ Goal: end-to-end chat UI streaming from FastAPI, no real retrieval yet.
 
 **Backend**
 
-- [ ] Chat thread CRUD: list threads, create thread, load message history
-- [ ] `POST /chat/stream` — accepts AI SDK message format, streams a stubbed assistant reply
-- [ ] Persist user + assistant messages to `chat_messages` after stream completes
-- [ ] `403` when user accesses another user's thread
+- [x] Chat thread CRUD: list threads, create thread, load message history
+- [x] `POST /chat/stream` — accepts AI SDK message format, streams a stubbed assistant reply
+- [x] Persist user + assistant messages to `chat_messages` after stream completes
+- [x] `403` when user accesses another user's thread
 
 **Frontend**
 
