@@ -1,14 +1,18 @@
 # /// script
 # requires-python = ">=3.12"
+# dependencies = ["certifi"]
 # ///
 from __future__ import annotations
 
 import json
 import shutil
+import ssl
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib import request
+
+import certifi
 
 
 # Params: edit these, then run `uv run data/download.py`
@@ -17,6 +21,8 @@ TICKERS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"]
 FILINGS_PER_COMPANY = 5
 OUTPUT_DIR = Path(__file__).resolve().parent / "downloads"
 CLEAR_OUTPUT_DIR = True
+
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 COMPANY_CIKS = {
     "AAPL": "0000320193",
@@ -31,7 +37,7 @@ def get_json(url: str) -> dict:
     req = request.Request(
         url, headers={"Accept": "application/json", "User-Agent": USER_AGENT}
     )
-    with request.urlopen(req, timeout=30) as response:
+    with request.urlopen(req, timeout=30, context=SSL_CONTEXT) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -43,7 +49,7 @@ def get_bytes(url: str) -> bytes:
             "User-Agent": USER_AGENT,
         },
     )
-    with request.urlopen(req, timeout=60) as response:
+    with request.urlopen(req, timeout=60, context=SSL_CONTEXT) as response:
         return response.read()
 
 
