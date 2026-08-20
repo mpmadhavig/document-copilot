@@ -9,16 +9,25 @@ __pycache__/
 *$py.class
 .venv/
 venv/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .pytest_cache/
 .mypy_cache/
+.pyright/
 .ruff_cache/
+.ipynb_checkpoints/
 dist/
 build/
 *.egg-info/
 
-# Node / Next.js
+# Node / Vite
 node_modules/
+frontend/dist/
+.vite/
 .turbo/
+coverage/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
@@ -35,6 +44,12 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+*~
+*.swp
+*.swo
+
+# Accidental shell-expanded home directories inside the repository
+~/
 
 # Logs
 *.log
