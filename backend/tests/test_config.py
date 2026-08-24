@@ -27,6 +27,17 @@ def test_settings_load_required_environment(monkeypatch: pytest.MonkeyPatch) -> 
     ]
 
 
+def test_settings_reject_embedding_dimensions_that_do_not_match_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("OPENAI_EMBEDDING_DIMENSIONS", "3072")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
 def test_settings_reject_missing_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in REQUIRED_ENV:
         monkeypatch.delenv(name, raising=False)

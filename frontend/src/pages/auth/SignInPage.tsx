@@ -25,7 +25,7 @@ export function SignInPage() {
       return
     }
     const requestedPath = location.state as { from?: { pathname?: string } } | null
-    navigate(requestedPath?.from?.pathname ?? '/', { replace: true })
+    navigate(requestedPath?.from?.pathname ?? '/chats', { replace: true })
   }
 
   return (

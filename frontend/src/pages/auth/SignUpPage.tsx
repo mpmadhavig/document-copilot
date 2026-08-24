@@ -33,7 +33,7 @@ export function SignUpPage() {
     }
 
     if (data.session) {
-      navigate('/', { replace: true })
+      navigate('/chats', { replace: true })
       return
     }
     setSuccess({ email, requiresConfirmation: true })

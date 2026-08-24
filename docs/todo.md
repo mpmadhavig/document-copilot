@@ -91,11 +91,11 @@ Goal: end-to-end chat UI streaming from FastAPI, no real retrieval yet.
 
 **Frontend**
 
-- [ ] React Router: login, chat list, chat thread routes
-- [ ] AI SDK chat primitives pointed at `POST /chat/stream` with Supabase bearer token
-- [ ] Thread sidebar (past conversations)
-- [ ] Basic message list + input + streaming indicator
-- [ ] Verify: create thread, send message, see streamed stub response, reload and see history
+- [x] React Router: login, chat list, chat thread routes
+- [x] AI SDK chat primitives pointed at `POST /chat/stream` with Supabase bearer token
+- [x] Thread sidebar (past conversations)
+- [x] Basic message list + input + streaming indicator
+- [x] Verify: create thread, send message, see streamed stub response, reload and see history
 
 ---
 
@@ -103,17 +103,17 @@ Goal: end-to-end chat UI streaming from FastAPI, no real retrieval yet.
 
 Goal: SEC filings in the corpus are parsed, chunked, embedded, and stored in Supabase.
 
-- [ ] `ingest/` scripts (or CLI entrypoint) for one-off corpus loading
-- [ ] HTML → normalized Markdown extraction (preserve page/section metadata)
-- [ ] Chunking strategy (size + overlap; store chunk index, page, section, ticker, filing type, year)
-- [ ] Write `source_documents` rows with filing metadata from `manifest.json`
-- [ ] Write `document_chunks` rows with text + metadata
-- [ ] OpenAI embedding generation → store `vector(1536)` per chunk
-- [ ] Generated `tsvector` populated for full-text search
-- [ ] Idempotent re-run (skip already-ingested documents)
-- [ ] Unit tests: chunking logic, metadata extraction
-- [ ] Run ingestion on full sample corpus (25 filings × 5 companies)
-- [ ] Verify: chunks exist in Supabase; spot-check a known passage (e.g. Apple revenue mix table)
+- [x] `ingest/` scripts (or CLI entrypoint) for one-off corpus loading
+- [x] HTML → normalized Markdown extraction (preserve page/section metadata)
+- [x] Chunking strategy (Docling hierarchical; store chunk index, page, section, ticker, filing type, year)
+- [x] Write `source_documents` rows with filing metadata from `manifest.json`
+- [x] Write `document_chunks` rows with text + metadata
+- [x] OpenAI embedding generation → store `vector(1536)` per chunk
+- [x] Generated `tsvector` populated for full-text search
+- [x] Idempotent re-run (skip already-ingested documents)
+- [x] Unit tests: chunking logic, metadata extraction
+- [x] Run ingestion on full sample corpus (25 filings × 5 companies)
+- [x] Verify: chunks exist in Supabase; spot-check a known passage (e.g. Apple revenue mix table)
 
 ---
 
@@ -121,12 +121,12 @@ Goal: SEC filings in the corpus are parsed, chunked, embedded, and stored in Sup
 
 Goal: a user question returns ranked, relevant source passages.
 
-- [ ] `retrieval/queries.py` — pgvector semantic search over `document_chunks`
-- [ ] `retrieval/queries.py` — Postgres full-text search over `search_vector`
-- [ ] `retrieval/fusion.py` — Reciprocal Rank Fusion in Python
-- [ ] `retrieval/retriever.py` — query → fused ranked passages + neighbor chunks
-- [ ] Unit tests: fusion ranking, query assembly (mock DB)
-- [ ] Integration test (optional, `@pytest.mark.integration`): real query against ingested corpus
+- [x] `retrieval/queries.py` — pgvector semantic search over `document_chunks`
+- [x] `retrieval/queries.py` — Postgres full-text search over `search_vector`
+- [x] `retrieval/fusion.py` — Reciprocal Rank Fusion in Python
+- [x] `retrieval/retriever.py` — query → fused ranked passages + neighbor chunks
+- [x] Unit tests: fusion ranking, query assembly (mock DB)
+- [x] Integration test (optional, `@pytest.mark.integration`): real query against ingested corpus
 - [ ] Verify: test queries from [client-brief](client-brief.md) return relevant chunks (manual or scripted)
 
 ---
@@ -168,7 +168,7 @@ Goal: analysts can verify every claim in one click — this is what makes the pr
 Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per analyst per week.
 
 - [x] README "Running locally" section — copy-paste commands for backend + frontend + env vars
-- [ ] Seed or document how to ingest/update the corpus
+- [x] Seed or document how to ingest/update the corpus
 - [ ] Smoke-test all 10 example questions from the client brief
 - [ ] Confirm chat history persists across sessions
 - [ ] Confirm ~40-user scale assumptions (no hardcoded single-user shortcuts)

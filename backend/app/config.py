@@ -57,6 +57,13 @@ class Settings(BaseSettings):
 
         return [origin.strip() for origin in value.split(",") if origin.strip()]
 
+    @field_validator("openai_embedding_dimensions")
+    @classmethod
+    def match_embedding_schema(cls, dimensions: int) -> int:
+        if dimensions != 1536:
+            raise ValueError("must match the database vector dimension of 1536")
+        return dimensions
+
     @field_validator("allowed_origins")
     @classmethod
     def restrict_allowed_origins(cls, origins: list[AnyHttpUrl]) -> list[AnyHttpUrl]:
