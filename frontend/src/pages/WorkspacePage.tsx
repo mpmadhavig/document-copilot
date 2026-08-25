@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 
 import { api, ApiError, type AuthenticatedUser } from '../lib/api'
+import {
+  ensureErrorReference,
+  troubleshootingText,
+} from '../lib/clientLogger'
 
 export function WorkspacePage() {
   const [user, setUser] = useState<AuthenticatedUser | null>(null)
@@ -11,11 +15,14 @@ export function WorkspacePage() {
       .getCurrentUser()
       .then(setUser)
       .catch((error: unknown) => {
-        setErrorMessage(
-          error instanceof ApiError
+        const message = error instanceof ApiError
             ? 'The backend could not verify your session.'
-            : 'Unable to verify your session.',
-        )
+            : 'Unable to verify your session.'
+        const reference = ensureErrorReference(error, {
+          area: 'workspace',
+          action: 'verify session',
+        })
+        setErrorMessage(`${message} ${troubleshootingText(reference)}.`)
       })
   }, [])
 

@@ -6,8 +6,11 @@ from collections.abc import AsyncIterator
 import structlog
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from app.assistant.runtime import AgentRuntimeDep
 from app.auth.dependencies import CurrentUser, UserClient
+from app.chat import orchestrator
 from app.chat.schemas import (
     ChatStreamRequest,
     StoredMessage,
@@ -17,8 +20,11 @@ from app.chat.schemas import (
     stored_message,
     user_text,
 )
-from app.chat.streaming import event, text_deltas
+from app.chat.streaming import ChatErrorCode, error_events, event, text_deltas
 from app.database import chats
+from app.grounding.validator import GroundingError
+from app.observability import new_error_reference
+from app.retrieval.retriever import RetrievalError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = structlog.get_logger()
@@ -27,7 +33,9 @@ logger = structlog.get_logger()
 async def _authorize_thread(thread_id: uuid.UUID, user_id: uuid.UUID) -> None:
     owner = await chats.get_thread_owner(thread_id)
     if owner is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
+        )
     if owner != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -74,9 +82,13 @@ async def get_messages(
 
 @router.post("/stream")
 async def stream_chat(
-    body: ChatStreamRequest, current_user: CurrentUser, client: UserClient
+    body: ChatStreamRequest,
+    current_user: CurrentUser,
+    client: UserClient,
+    runtime: AgentRuntimeDep,
 ) -> StreamingResponse:
-    await _authorize_thread(body.thread_id, uuid.UUID(str(current_user.id)))
+    user_id = uuid.UUID(str(current_user.id))
+    await _authorize_thread(body.thread_id, user_id)
     latest = body.messages[-1]
     if latest.role != "user":
         raise HTTPException(
@@ -92,42 +104,79 @@ async def stream_chat(
 
     assistant_id = str(uuid.uuid4())
     text_id = str(uuid.uuid4())
-    reply = f"Stub response: I received your message: {prompt}"
 
     async def generate() -> AsyncIterator[str]:
         yield event({"type": "start", "messageId": assistant_id})
-        yield event({"type": "text-start", "id": text_id})
-        for delta in text_deltas(reply):
-            yield event({"type": "text-delta", "id": text_id, "delta": delta})
-        yield event({"type": "text-end", "id": text_id})
+        try:
+            completed = await orchestrator.complete_turn(
+                runtime,
+                client,
+                user_id=user_id,
+                thread_id=body.thread_id,
+                prompt=prompt,
+            )
+        except RetrievalError as error:
+            for item in _stream_failure(
+                "retrieval_failed", error, thread_id=body.thread_id
+            ):
+                yield item
+            return
+        except (GroundingError, UnexpectedModelBehavior) as error:
+            for item in _stream_failure(
+                "grounding_failed", error, thread_id=body.thread_id
+            ):
+                yield item
+            return
+        except Exception as error:  # noqa: BLE001 - stream boundary must fail closed
+            for item in _stream_failure(
+                "assistant_failed", error, thread_id=body.thread_id
+            ):
+                yield item
+            return
 
         assistant_message = {
             "id": assistant_id,
             "role": "assistant",
-            "parts": [{"type": "text", "text": reply}],
+            "parts": completed.rendered.message_parts(),
         }
         try:
-            await chats.append_turn(
+            await chats.append_grounded_turn(
                 client,
                 thread_id=body.thread_id,
                 user_message=latest.model_dump(mode="json"),
                 assistant_message=assistant_message,
+                assistant_model=completed.model,
+                assistant_usage=completed.usage,
+                citations=[
+                    citation.database_row() for citation in completed.rendered.citations
+                ],
             )
-        except Exception as error:
-            logger.exception(
-                "chat_turn_persistence_failed",
-                thread_id=str(body.thread_id),
-                error_type=type(error).__name__,
-            )
-            yield event(
-                {
-                    "type": "error",
-                    "errorText": "The response could not be saved. Please try again.",
-                }
-            )
-            yield "data: [DONE]\n\n"
+        except Exception as error:  # noqa: BLE001 - stream boundary must fail closed
+            for item in _stream_failure(
+                "persistence_failed", error, thread_id=body.thread_id
+            ):
+                yield item
             return
 
+        yield event(
+            {
+                "type": "data-answer-status",
+                "id": "answer-status",
+                "data": {"status": completed.rendered.status},
+            }
+        )
+        yield event({"type": "text-start", "id": text_id})
+        for delta in text_deltas(completed.rendered.text):
+            yield event({"type": "text-delta", "id": text_id, "delta": delta})
+        yield event({"type": "text-end", "id": text_id})
+        for citation in completed.rendered.citations:
+            yield event(
+                {
+                    "type": "data-citation",
+                    "id": f"citation-{citation.position}",
+                    "data": citation.data(),
+                }
+            )
         yield event({"type": "finish"})
         yield "data: [DONE]\n\n"
 
@@ -140,3 +189,20 @@ async def stream_chat(
             "x-vercel-ai-ui-message-stream": "v1",
         },
     )
+
+
+def _stream_failure(
+    code: ChatErrorCode,
+    error: Exception,
+    *,
+    thread_id: uuid.UUID,
+) -> tuple[str, str, str]:
+    reference = new_error_reference()
+    logger.exception(
+        "chat_turn_failed",
+        thread_id=str(thread_id),
+        error_code=code,
+        error_reference=reference,
+        error_type=type(error).__name__,
+    )
+    return error_events(code, reference)

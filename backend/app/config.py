@@ -1,7 +1,7 @@
 """Application configuration loaded and validated from the environment."""
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AnyHttpUrl,
@@ -33,10 +33,13 @@ class Settings(BaseSettings):
     database_url: PostgresDsn
 
     openai_api_key: SecretStr = Field(min_length=1)
+    openai_chat_model: str = Field(min_length=1)
     openai_embedding_model: str = Field(min_length=1)
     openai_embedding_dimensions: int = Field(gt=0)
 
     allowed_origins: Annotated[list[AnyHttpUrl], NoDecode]
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    backend_log_path: Path = _BACKEND_DIR / "logs" / "backend.log"
 
     @computed_field
     @property

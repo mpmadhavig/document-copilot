@@ -34,7 +34,10 @@ class MessageCitation(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
     )
     message_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False

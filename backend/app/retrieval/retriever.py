@@ -16,6 +16,10 @@ DEFAULT_RESULT_LIMIT = 8
 DEFAULT_NEIGHBOR_WINDOW = 1
 
 
+class RetrievalError(RuntimeError):
+    """Raised when an external retrieval dependency cannot serve a query."""
+
+
 class DocumentRetriever:
     def __init__(
         self,
@@ -55,30 +59,40 @@ class DocumentRetriever:
         if selected_limit < 1 or selected_limit > self.candidate_limit:
             raise ValueError("limit must be between 1 and candidate_limit")
 
-        embedding_result, lexical_hits = await asyncio.gather(
-            self._embed_query(normalized_query),
-            queries.full_text_search(
+        try:
+            embedding_result, lexical_hits = await asyncio.gather(
+                self._embed_query(normalized_query),
+                queries.full_text_search(
+                    self.client,
+                    query=normalized_query,
+                    limit=self.candidate_limit,
+                    filters=filters,
+                ),
+            )
+            semantic_hits = await queries.semantic_search(
                 self.client,
-                query=normalized_query,
+                query_embedding=embedding_result,
                 limit=self.candidate_limit,
                 filters=filters,
-            ),
-        )
-        semantic_hits = await queries.semantic_search(
-            self.client,
-            query_embedding=embedding_result,
-            limit=self.candidate_limit,
-            filters=filters,
-        )
-        ranked = reciprocal_rank_fusion(semantic_hits, lexical_hits)[:selected_limit]
-        if not ranked or self.neighbor_window == 0:
-            return ranked
+            )
+            ranked = reciprocal_rank_fusion(semantic_hits, lexical_hits)[
+                :selected_limit
+            ]
+            if not ranked or self.neighbor_window == 0:
+                return ranked
 
-        neighbors = await queries.get_neighbors(
-            self.client,
-            seed_chunk_ids=[item.passage.chunk_id for item in ranked],
-            window=self.neighbor_window,
-        )
+            neighbors = await queries.get_neighbors(
+                self.client,
+                seed_chunk_ids=[item.passage.chunk_id for item in ranked],
+                window=self.neighbor_window,
+            )
+        except RetrievalError:
+            raise
+        except ValueError:
+            raise
+        except Exception as error:
+            raise RetrievalError("filing retrieval failed") from error
+
         return [
             item.model_copy(
                 update={"neighbors": tuple(neighbors.get(item.passage.chunk_id, []))}

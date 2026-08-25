@@ -1,4 +1,23 @@
-# React + TypeScript + Vite
+# Document Copilot frontend
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Browser, React, API, authentication, and chat transport failures are reported
+to the same-origin Vite server and written as rotating JSON lines to
+`logs/frontend.log`. User-facing errors include the matching `fe-...` reference:
+
+```bash
+rg 'fe-reference-from-the-ui' logs/frontend.log*
+```
+
+The collector is available under both `pnpm dev` and `pnpm preview`. It records
+diagnostic metadata only; prompts, passwords, tokens, and API response bodies
+are not included.
+
+## Vite notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

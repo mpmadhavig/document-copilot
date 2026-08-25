@@ -1,0 +1,1 @@
+"""Grounding contract tests."""

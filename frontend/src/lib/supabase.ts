@@ -9,3 +9,7 @@ export async function getAccessToken(): Promise<string | null> {
   if (error) throw error
   return data.session?.access_token ?? null
 }
+
+export async function clearLocalSession(): Promise<void> {
+  await supabase.auth.signOut({ scope: 'local' })
+}

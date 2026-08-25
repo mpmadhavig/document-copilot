@@ -4,14 +4,13 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import { ChatLayout } from './components/chat/ChatLayout'
 import { ChatIndexPage } from './pages/chat/ChatIndexPage'
 import { ChatThreadPage } from './pages/chat/ChatThreadPage'
-import { SignInPage } from './pages/auth/SignInPage'
-import { SignUpPage } from './pages/auth/SignUpPage'
+import { AuthPage } from './pages/auth/AuthPage'
 
 export function Router() {
   return (
     <Routes>
-      <Route path="/signin" element={<SignInPage />} />
-      <Route path="/signup" element={<SignUpPage />} />
+      <Route path="/signin" element={<AuthPage key="signin" initialMode="signin" />} />
+      <Route path="/signup" element={<AuthPage key="signup" initialMode="signup" />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<Navigate to="/chats" replace />} />
         <Route path="/chats" element={<ChatLayout />}>

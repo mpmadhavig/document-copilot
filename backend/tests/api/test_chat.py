@@ -3,11 +3,18 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
+from app.assistant.runtime import get_agent_runtime
 from app.auth.dependencies import get_current_user, get_user_client
+from app.chat import orchestrator
 from app.database import chats
+from app.grounding.renderer import RenderedAnswer, RenderedCitation
+from app.grounding.validator import GroundingError
 from app.main import app
+from app.retrieval.retriever import RetrievalError
 
 USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 OTHER_USER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
@@ -18,6 +25,7 @@ NOW = "2026-08-20T12:00:00Z"
 def authenticated_client() -> TestClient:
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=USER_ID)
     app.dependency_overrides[get_user_client] = lambda: object()
+    app.dependency_overrides[get_agent_runtime] = lambda: object()
     return TestClient(app)
 
 
@@ -119,9 +127,7 @@ def test_rename_thread_returns_403_for_another_user(monkeypatch) -> None:
 def test_rename_thread_rejects_blank_title() -> None:
     client = authenticated_client()
     try:
-        response = client.patch(
-            f"/chat/threads/{THREAD_ID}", json={"title": "   "}
-        )
+        response = client.patch(f"/chat/threads/{THREAD_ID}", json={"title": "   "})
     finally:
         clear_overrides()
 
@@ -190,8 +196,37 @@ def test_returns_404_for_missing_thread(monkeypatch) -> None:
 
 def test_streams_ai_sdk_events_and_persists_completed_turn(monkeypatch) -> None:
     append_turn = AsyncMock()
+    citation = RenderedCitation(
+        position=1,
+        chunk_id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
+        quote="Revenue increased 10%.",
+        ticker="ACME",
+        company_name="Acme Corp.",
+        filing_type="10-K",
+        fiscal_year=2025,
+        filing_date="2025-12-31",
+        pages=(42,),
+        section="Item 7",
+        accession_number="0000000000-25-000001",
+        source_url="https://example.com/filing",
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "complete_turn",
+        AsyncMock(
+            return_value=orchestrator.CompletedTurn(
+                rendered=RenderedAnswer(
+                    status="answered",
+                    text="Revenue increased 10%. [1]",
+                    citations=(citation,),
+                ),
+                model="test-chat-model",
+                usage={"input_tokens": 100, "output_tokens": 20},
+            )
+        ),
+    )
     monkeypatch.setattr(chats, "get_thread_owner", AsyncMock(return_value=USER_ID))
-    monkeypatch.setattr(chats, "append_turn", append_turn)
+    monkeypatch.setattr(chats, "append_grounded_turn", append_turn)
     user_message = {
         "id": "ui-message-1",
         "role": "user",
@@ -211,12 +246,20 @@ def test_streams_ai_sdk_events_and_persists_completed_turn(monkeypatch) -> None:
     lines = [line.removeprefix("data: ") for line in response.text.splitlines() if line]
     events = [json.loads(line) for line in lines[:-1]]
     assert events[0]["type"] == "start"
+    answer_status = next(
+        event for event in events if event["type"] == "data-answer-status"
+    )
+    assert answer_status["data"] == {"status": "answered"}
     assert any(event["type"] == "text-delta" for event in events)
+    citation_event = next(event for event in events if event["type"] == "data-citation")
+    assert citation_event["data"]["chunkId"] == str(citation.chunk_id)
     assert events[-1]["type"] == "finish"
     assert lines[-1] == "[DONE]"
     append_turn.assert_awaited_once()
     assert append_turn.await_args.kwargs["user_message"] == user_message
     assert append_turn.await_args.kwargs["assistant_message"]["role"] == "assistant"
+    assert append_turn.await_args.kwargs["assistant_model"] == "test-chat-model"
+    assert append_turn.await_args.kwargs["citations"] == [citation.database_row()]
 
 
 def test_stream_rejects_non_user_latest_message(monkeypatch) -> None:
@@ -242,13 +285,77 @@ def test_stream_rejects_non_user_latest_message(monkeypatch) -> None:
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (RetrievalError("database password leaked"), "retrieval_failed"),
+        (GroundingError("unsupported quote leaked"), "grounding_failed"),
+        (
+            UnexpectedModelBehavior("output retries leaked"),
+            "grounding_failed",
+        ),
+        (RuntimeError("provider detail leaked"), "assistant_failed"),
+    ],
+)
+def test_stream_exposes_safe_completion_failure_code(
+    monkeypatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    monkeypatch.setattr(chats, "get_thread_owner", AsyncMock(return_value=USER_ID))
+    monkeypatch.setattr(
+        orchestrator,
+        "complete_turn",
+        AsyncMock(side_effect=failure),
+    )
+    client = authenticated_client()
+    try:
+        response = client.post(
+            "/chat/stream",
+            json={
+                "threadId": str(THREAD_ID),
+                "messages": [
+                    {
+                        "id": "ui-message-1",
+                        "role": "user",
+                        "parts": [{"type": "text", "text": "Compare revenue"}],
+                    }
+                ],
+            },
+        )
+    finally:
+        clear_overrides()
+
+    lines = [line.removeprefix("data: ") for line in response.text.splitlines() if line]
+    events = [json.loads(line) for line in lines[:-1]]
+    error_code = next(event for event in events if event["type"] == "data-chat-error")
+    assert error_code["data"]["code"] == expected_code
+    assert error_code["data"]["reference"].startswith("be-")
+    assert error_code["transient"] is True
+    assert "leaked" not in response.text
+    assert not any(event["type"] == "text-delta" for event in events)
+
+
 def test_stream_emits_error_when_completed_turn_cannot_be_persisted(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(chats, "get_thread_owner", AsyncMock(return_value=USER_ID))
     monkeypatch.setattr(
+        orchestrator,
+        "complete_turn",
+        AsyncMock(
+            return_value=orchestrator.CompletedTurn(
+                rendered=RenderedAnswer(
+                    status="answered", text="Grounded answer", citations=()
+                ),
+                model="test-chat-model",
+                usage={},
+            )
+        ),
+    )
+    monkeypatch.setattr(
         chats,
-        "append_turn",
+        "append_grounded_turn",
         AsyncMock(side_effect=RuntimeError("database unavailable")),
     )
     client = authenticated_client()
@@ -272,10 +379,15 @@ def test_stream_emits_error_when_completed_turn_cannot_be_persisted(
     lines = [line.removeprefix("data: ") for line in response.text.splitlines() if line]
     events = [json.loads(line) for line in lines[:-1]]
     assert response.status_code == 200
+    assert events[-2]["type"] == "data-chat-error"
+    assert events[-2]["data"]["code"] == "persistence_failed"
+    assert events[-2]["data"]["reference"].startswith("be-")
+    assert events[-2]["transient"] is True
     assert events[-1] == {
         "type": "error",
-        "errorText": "The response could not be saved. Please try again.",
+        "errorText": "The grounded response could not be saved. Please try again.",
     }
+    assert not any(event["type"] == "text-delta" for event in events)
     assert not any(event["type"] == "finish" for event in events)
     assert lines[-1] == "[DONE]"
 

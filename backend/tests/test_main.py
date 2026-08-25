@@ -15,6 +15,14 @@ def test_health() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_application_lifespan_initializes_agent_runtime() -> None:
+    with TestClient(app) as lifespan_client:
+        response = lifespan_client.get("/health")
+
+        assert response.status_code == 200
+        assert app.state.agent_runtime.agent is not None
+
+
 def test_local_frontend_origin_is_allowed() -> None:
     response = client.options(
         "/health",

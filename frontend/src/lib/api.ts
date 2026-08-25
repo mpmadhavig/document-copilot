@@ -1,8 +1,8 @@
 import { env } from './env'
 import { HttpClient } from './http'
-import { getAccessToken } from './supabase'
+import { clearLocalSession, getAccessToken } from './supabase'
 
-const http = new HttpClient(env.apiBaseUrl, getAccessToken)
+const http = new HttpClient(env.apiBaseUrl, getAccessToken, clearLocalSession)
 
 export type AuthenticatedUser = { id: string; email: string | null }
 export type ChatThread = {

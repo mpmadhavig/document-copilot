@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
-import type { UIMessage } from 'ai'
 
 import { ChatConversation } from '@/components/chat/ChatConversation'
 import type { ChatLayoutContext } from '@/components/chat/ChatLayout'
 import { api, ApiError } from '@/lib/api'
+import {
+  ensureErrorReference,
+  troubleshootingText,
+} from '@/lib/clientLogger'
+import {
+  asDocumentChatMessage,
+  type DocumentChatMessage,
+} from '@/lib/chat'
 
 export function ChatThreadPage() {
   const { threadId } = useParams()
   const { threads, refreshThreads } = useOutletContext<ChatLayoutContext>()
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [loaded, setLoaded] = useState<{
     threadId: string
-    messages: UIMessage[] | null
+    messages: DocumentChatMessage[] | null
     errorMessage: string | null
+    canRetry: boolean
   } | null>(null)
   const thread = threads.find((item) => item.id === threadId)
 
@@ -26,10 +35,9 @@ export function ChatThreadPage() {
         if (!isCurrent) return
         setLoaded({
           threadId,
-          messages: stored.map(
-            ({ id, role, parts }) => ({ id, role, parts }) as UIMessage,
-          ),
+          messages: stored.map(asDocumentChatMessage),
           errorMessage: null,
+          canRetry: false,
         })
       })
       .catch((error: unknown) => {
@@ -42,27 +50,52 @@ export function ChatThreadPage() {
         } else {
           errorMessage = 'Unable to load this conversation.'
         }
-        setLoaded({ threadId, messages: null, errorMessage })
+        const reference = ensureErrorReference(error, {
+          area: 'conversation',
+          action: 'load messages',
+        })
+        errorMessage = `${errorMessage} ${troubleshootingText(reference)}.`
+        setLoaded({
+          threadId,
+          messages: null,
+          errorMessage,
+          canRetry: !(error instanceof ApiError && [403, 404].includes(error.status ?? 0)),
+        })
       })
 
     return () => {
       isCurrent = false
     }
-  }, [threadId])
+  }, [loadAttempt, threadId])
 
   if (!threadId) return null
   const isCurrentThreadLoaded = loaded?.threadId === threadId
   const messages = isCurrentThreadLoaded ? loaded.messages : null
   const errorMessage = isCurrentThreadLoaded ? loaded.errorMessage : null
+  const canRetry = isCurrentThreadLoaded ? loaded.canRetry : false
 
   if (errorMessage) {
     return (
-      <div className="flex min-h-svh items-center justify-center px-6">
+      <div className="flex h-full items-center justify-center px-6">
         <div className="text-center">
           <p className="text-slate-700" role="alert">{errorMessage}</p>
-          <Link className="mt-4 inline-block font-semibold text-violet-700" to="/chats">
-            Back to conversations
-          </Link>
+          <div className="mt-4 flex justify-center gap-4">
+            {canRetry && (
+              <button
+                className="font-semibold text-violet-700"
+                type="button"
+                onClick={() => {
+                  setLoaded(null)
+                  setLoadAttempt((attempt) => attempt + 1)
+                }}
+              >
+                Try again
+              </button>
+            )}
+            <Link className="font-semibold text-violet-700" to="/chats">
+              Back to conversations
+            </Link>
+          </div>
         </div>
       </div>
     )
@@ -70,7 +103,7 @@ export function ChatThreadPage() {
 
   if (!messages) {
     return (
-      <div className="flex min-h-svh items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <p className="text-sm text-slate-500" role="status">Loading messages…</p>
       </div>
     )

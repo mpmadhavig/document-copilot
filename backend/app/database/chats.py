@@ -61,7 +61,7 @@ async def load_messages(
 ) -> list[dict[str, Any]]:
     response = await (
         client.table("chat_messages")
-        .select("id,role,content,sequence,created_at")
+        .select("id,role,content,model,usage,sequence,created_at")
         .eq("thread_id", str(thread_id))
         .order("sequence")
         .execute()
@@ -69,19 +69,24 @@ async def load_messages(
     return response.data
 
 
-async def append_turn(
+async def append_grounded_turn(
     client: AsyncClient,
     *,
     thread_id: uuid.UUID,
     user_message: dict[str, Any],
     assistant_message: dict[str, Any],
+    assistant_model: str,
+    assistant_usage: dict[str, Any],
+    citations: list[dict[str, Any]],
 ) -> None:
     await client.rpc(
-        "append_chat_turn",
+        "append_grounded_chat_turn",
         {
             "target_thread_id": str(thread_id),
             "user_message": user_message,
             "assistant_message": assistant_message,
-            "assistant_model": "stub",
+            "assistant_model": assistant_model,
+            "assistant_usage": assistant_usage,
+            "citations": citations,
         },
     ).execute()

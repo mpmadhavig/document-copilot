@@ -1,13 +1,58 @@
 """FastAPI application entrypoint."""
 
-from fastapi import FastAPI
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import structlog
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.chat import router as chat_router
+from app.assistant.runtime import create_agent_runtime
 from app.auth.dependencies import CurrentUser
 from app.config import settings
+from app.observability import configure_logging, new_error_reference
 
-app = FastAPI(title="Document Copilot")
+configure_logging(settings.backend_log_path, settings.log_level)
+logger = structlog.get_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    runtime = create_agent_runtime()
+    app.state.agent_runtime = runtime
+    try:
+        yield
+    finally:
+        await runtime.openai_client.close()
+
+
+app = FastAPI(title="Document Copilot", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_unhandled_request_errors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as error:
+        reference = new_error_reference()
+        logger.exception(
+            "unhandled_request_error",
+            error_reference=reference,
+            error_type=type(error).__name__,
+            method=request.method,
+            path=request.url.path,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "The request could not be completed.",
+                "error_reference": reference,
+            },
+            headers={"X-Error-Reference": reference},
+        )
+
 
 app.add_middleware(
     CORSMiddleware,

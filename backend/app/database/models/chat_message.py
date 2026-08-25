@@ -37,7 +37,10 @@ class ChatMessage(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
     )
     thread_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("chat_threads.id", ondelete="CASCADE"), nullable=False

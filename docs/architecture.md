@@ -200,6 +200,34 @@ Retrieval and grounding remain independent from PydanticAI. This keeps ingestion
 
 Document Copilot uses hybrid retrieval:
 
+```mermaid
+flowchart TB
+    question["Analyst question"] --> tool["Agent: search_filings<br/>query + ticker/year/form filters"]
+    tool --> evidence["EvidenceStore<br/>search budget + request cache"]
+    evidence --> retriever["DocumentRetriever"]
+
+    subgraph candidates["Candidate generation"]
+        direction LR
+        retriever --> embed["OpenAI embedding<br/>1536 dimensions"]
+        embed --> semantic["Semantic RPC<br/>pgvector cosine search"]
+        retriever --> lexical["Full-text RPC<br/>Postgres tsvector search"]
+    end
+
+    semantic --> fusion["Reciprocal Rank Fusion<br/>merge semantic + lexical ranks"]
+    lexical --> fusion
+    fusion --> seeds["Top ranked seed chunks"]
+    seeds --> neighbors["Neighbor RPC<br/>adjacent chunks in each filing"]
+    neighbors --> ranked["RankedPassage results<br/>source metadata + context"]
+    ranked --> registry["Evidence registry<br/>expose bounded excerpts"]
+
+    registry --> model["Agent reviews evidence"]
+    model -->|"needs full chunk"| readChunk["read_chunk"]
+    model -->|"needs surrounding context"| readNeighbors["read_surrounding_chunks"]
+    readChunk --> registry
+    readNeighbors --> registry
+    registry --> citations["Only exposed chunk IDs and exact quotes<br/>are eligible for citations"]
+```
+
 1. Embed the user's query with the configured OpenAI embedding model.
 2. Run a semantic search over `document_chunks.embedding` with `pgvector`.
 3. Run a lexical search over `document_chunks.search_vector` with Postgres full-text search.
@@ -267,6 +295,14 @@ Streaming responsibilities:
 - Send citation/source metadata as structured parts once available.
 - Send clear error events for authentication failures, missing threads, retrieval failures, and grounding failures.
 - Persist only after the assistant run completes successfully, unless a separate partial-message model is deliberately introduced later.
+
+Grounded assistant messages use three application data parts in addition to AI SDK text parts:
+
+- `data-answer-status` is persisted and identifies `answered`, `insufficient_evidence`, or `refused` output so the UI does not infer trust state from prose.
+- `data-citation` is persisted and contains the server-validated quote plus trusted filing metadata needed for citation chips and the source passage panel.
+- `data-chat-error` is transient and contains only a safe failure category. Internal exception details remain in backend logs.
+
+The frontend renders citation markers only when a matching `data-citation` part exists. Clicking either an inline marker or its metadata chip opens the same validated quote and filing metadata. HTTP failures before streaming remain responsible for authentication and thread-access errors.
 
 ## Data Model
 
