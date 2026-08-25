@@ -1,129 +1,244 @@
 # Document Copilot
 
-An internal AI chatbot that lets analysts query a corpus of documents in plain English and get sourced, citable answers.
+Document Copilot is an authenticated research assistant for querying a curated
+corpus of SEC filings. It combines semantic and full-text retrieval, generates a
+structured answer, and only displays factual answers whose citations pass a
+server-side grounding check.
 
-## The client
+The repository contains a complete local vertical slice: email authentication,
+chat history, corpus ingestion, hybrid retrieval, grounded answer generation,
+citations, source inspection, and structured error logging. Before a production
+release, complete the items in the [project review](docs/project-review.md).
 
-**Driftwood Capital** — fictional independent investment research firm. Their analysts spend half their week reading 10-Ks and 10-Qs before they can produce any original analysis. Document Copilot eats that intake work so they can skip straight to insight.
+## What the application does
 
-Full brief: [docs/client-brief.md](docs/client-brief.md)
+- Signs analysts in with Supabase email authentication.
+- Stores private chat threads and messages behind Postgres row-level security.
+- Searches normalized filings with OpenAI embeddings, `pgvector`, and Postgres
+  full-text search.
+- Fuses semantic and lexical rankings with Reciprocal Rank Fusion (RRF).
+- Gives the model bounded tools for searching and reading filing passages.
+- Rejects unsupported citations and persists a completed turn atomically.
+- Streams AI SDK-compatible answer and citation events to the React client.
+
+The fictional product brief is in [docs/client-brief.md](docs/client-brief.md).
+The implementation is explained in
+[docs/technical-guide.md](docs/technical-guide.md).
 
 ## Stack
 
-| Layer              | Choice                                               |
-| ------------------ | ---------------------------------------------------- |
-| Backend            | Python + FastAPI                                     |
-| Frontend           | Vite + React SPA + TypeScript                        |
-| Database           | Supabase Postgres (users, chats, documents, chunks)  |
-| Migrations         | SQLAlchemy models + Alembic                          |
-| Retrieval          | Supabase `pgvector` + Postgres full-text search      |
-| Auth               | Supabase Auth (email only)                           |
-| Hosting            | Railway                                              |
-| LLM + embeddings   | OpenAI                                               |
+| Layer | Technology |
+| --- | --- |
+| Frontend | Vite, React, TypeScript, Tailwind CSS, AI SDK UI |
+| Backend | Python 3.12+, FastAPI, PydanticAI |
+| Data and auth | Supabase Auth and Postgres |
+| Retrieval | `pgvector`, Postgres full-text search, Python RRF |
+| Schema | SQLAlchemy models and Alembic migrations |
+| Models | OpenAI chat and embedding models |
+| Intended hosting | Railway frontend and backend services |
 
-## Repo layout
+## Repository map
 
 ```text
 document-copilot/
-├── AGENTS.md           # agent instructions (read first)
-├── README.md           # this file
-├── data/               # local corpus + download script (payloads gitignored)
-├── docs/
-│   └── client-brief.md # the client one-pager
-├── backend/            # FastAPI service
-└── frontend/           # React SPA (Vite)
+├── AGENTS.md                 # repository-wide engineering rules
+├── CONTRIBUTING.md           # development and repository-content policy
+├── backend/
+│   ├── app/                  # FastAPI, auth, chat, retrieval, and grounding
+│   ├── alembic/versions/     # ordered database migrations
+│   ├── ingest/               # conversion, chunking, embedding, and import CLIs
+│   ├── scripts/              # opt-in live retrieval/grounding evaluations
+│   └── tests/                # fast unit/contract tests and marked integration tests
+├── data/
+│   ├── download.py           # SEC EDGAR sample downloader
+│   ├── downloads/            # raw files and manifest; generated and ignored
+│   └── markdown/             # reviewed normalized sample corpus
+├── docs/                     # product, setup, technical, and readiness docs
+└── frontend/
+    ├── server/               # Vite middleware for browser error collection
+    └── src/                  # React routes, components, and typed clients
 ```
 
 ## Prerequisites
 
-Install these before setting up `backend/` or `frontend/`:
+- Python 3.12 or newer
+- [`uv`](https://docs.astral.sh/uv/)
+- Node.js 20 or newer
+- `pnpm` (the only supported frontend package manager)
+- A Supabase project
+- An OpenAI API key
 
-| Tool | Version | Used for | Install |
-| ---- | ------- | -------- | ------- |
-| [Python](https://www.python.org/downloads/) | 3.12+ | Backend runtime | OS package manager or python.org |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | latest | Backend deps + `data/download.py` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Node.js](https://nodejs.org/) | 20+ (LTS) | Frontend toolchain | nodejs.org or `nvm install --lts` |
-| [pnpm](https://pnpm.io/installation) | latest | Frontend package manager | `corepack enable && corepack prepare pnpm@latest --activate` |
+Use [docs/guides/supabase-setup.md](docs/guides/supabase-setup.md) to create the
+Supabase project and collect the required values.
 
-You also need accounts/keys for external services once the app is wired up. Start with [docs/guides/supabase-setup.md](docs/guides/supabase-setup.md) (account + project), then create an [OpenAI API key](https://platform.openai.com/api-keys) when the LLM layer is wired up.
+## Run locally
 
-## Running locally
+### 1. Configure both services
 
-Use two terminals from the repository root. On first setup, copy each example environment file and replace its placeholder values.
+From the repository root:
 
-Terminal 1 — FastAPI:
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
+
+Replace every placeholder. Keep the Supabase service-role key, database URL,
+and OpenAI key in `backend/.env` only. The frontend file may contain only the
+public Supabase URL, anon key, and backend URL.
+
+For local development, keep:
+
+```dotenv
+# backend/.env
+ALLOWED_ORIGINS=http://localhost:5173
+
+# frontend/.env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+### 2. Install the backend and apply the schema
 
 ```bash
 cd backend
-test -f .env || cp .env.example .env
-uv sync
+uv sync --locked
 uv run alembic upgrade head
+```
+
+Alembic must use the direct/session Supabase Postgres URL, not the transaction
+pooler. Apply migrations before creating application users so the auth-user sync
+trigger and public user table are available.
+
+### 3. Load a corpus when the database is empty
+
+The checked-in `data/markdown/` directory is a reviewed normalized sample. The
+generated manifest still comes from the downloader.
+
+First edit `USER_AGENT` in `data/download.py`, then run:
+
+```bash
+# From the repository root:
+uv run data/download.py
+
+cd backend
+uv run python -m ingest.convert_filings ../data/downloads ../data/markdown
+uv run python -m ingest.import_documents \
+  ../data/downloads/manifest.json ../data/markdown
+uv run python -m ingest.import_chunks \
+  ../data/downloads/manifest.json ../data/markdown --estimate
+```
+
+Review the estimate before making paid embedding calls. Then use the printed
+token count as the spending guard and your account's token-per-minute limit:
+
+```bash
+uv run python -m ingest.import_chunks \
+  ../data/downloads/manifest.json ../data/markdown \
+  --all --max-total-tokens ESTIMATED_TOKENS \
+  --tokens-per-minute ACCOUNT_TPM_LIMIT
+```
+
+The import is idempotent at the document/chunk-version level. See
+[data/README.md](data/README.md) for previews and one-call embedding checks.
+
+### 4. Start the API
+
+```bash
+cd backend
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Confirm the API at <http://127.0.0.1:8000/health>.
+Check <http://127.0.0.1:8000/health> and the OpenAPI UI at
+<http://127.0.0.1:8000/docs>.
 
-Terminal 2 — React:
+### 5. Start the frontend
+
+In another terminal:
 
 ```bash
 cd frontend
-test -f .env || cp .env.example .env
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the URL printed by Vite, normally <http://localhost:5173>. The frontend origin must appear in the backend `ALLOWED_ORIGINS` setting.
+Open <http://localhost:5173>, create an email account, and sign in. Supabase
+email confirmation may be disabled for local development; re-enable it before
+production use.
 
-### Citation acceptance check
+## Use the product
 
-1. Sign in, create a research thread, and ask a question that the ingested corpus can answer.
-2. Wait for the grounded answer and confirm that inline markers such as `[1]` and source chips appear.
-3. Click an inline marker. Confirm that the source panel shows the expected company, filing, page or section, and an exact supporting quote.
-4. Click the corresponding source chip and confirm it selects the same passage.
-5. Open the original filing and search for a distinctive phrase from the quote when you want to verify it against the SEC document itself.
-6. Reload the browser, reopen the thread, and repeat steps 3–4 to verify persisted citation metadata.
+1. Create a research thread from the left sidebar.
+2. Ask a focused question that names the company, fiscal year, filing type, or
+   disclosure where possible.
+3. Open inline citation markers or source chips beside the answer.
+4. Compare the exact quote, filing metadata, and original SEC source before
+   using an answer downstream.
+5. Treat `insufficient_evidence` as a deliberate result: the available corpus
+   did not support a grounded answer.
 
-### Troubleshooting with error references
+The assistant summarizes filing evidence; it does not provide stock picks,
+price targets, or personalized investment advice.
 
-User-visible failures include a reference beginning with `be-` or `fe-` and the
-log file that contains its technical details. Logs are newline-delimited JSON,
-rotate at 5 MB, and retain five backups.
+## Verify a change
 
-```bash
-# Backend/API/model/database failures
-tail -f backend/logs/backend.log
-
-# Browser/React/network/auth failures collected by the Vite server
-tail -f frontend/logs/frontend.log
-
-# Find one reported failure
-rg 'be-123456789abc' backend/logs/backend.log*
-rg 'fe-12345678-1234' frontend/logs/frontend.log*
-```
-
-The frontend collector runs with both `pnpm dev` and `pnpm preview`. Reports are
-size-limited and contain only the error name/message/stack, route, browser user
-agent, operation name, and reference IDs. Chat text, credentials, access tokens,
-and API response bodies are not logged.
-
-Railway container filesystems are ephemeral. Attach a persistent volume to each
-service's `logs/` directory if these files must survive a restart or redeploy;
-the same entries continue to be available in the live service output.
-
-Additional setup guides:
-
-- [Supabase](docs/guides/supabase-setup.md) — account, hosted project (dashboard or CLI)
-- [Backend](docs/guides/backend-setup.md)
-- [Frontend](docs/guides/frontend-setup.md)
-
-## Sample SEC data
-
-Use the standalone downloader to fetch a small local 10-K sample from SEC EDGAR.
-Edit the params at the top of `data/download.py`, especially `USER_AGENT`, then run:
+Backend fast checks:
 
 ```bash
-uv run data/download.py
+cd backend
+uv run pytest -m "not integration"
+uv run ruff check app ingest tests scripts
+uv run alembic heads
 ```
 
-By default this downloads the latest 5 10-K filings for AAPL, MSFT, NVDA, AMZN, and GOOGL into year folders under `data/downloads/` and writes a `manifest.json`.
-Downloaded files are gitignored; the `data/` folder itself stays in git for the script and notes.
+Frontend checks:
+
+```bash
+cd frontend
+pnpm lint
+pnpm build
+```
+
+Live retrieval and grounding evaluations use Supabase/OpenAI and may incur cost:
+
+```bash
+cd backend
+uv run python -m scripts.evaluate_retrieval
+uv run python -m scripts.evaluate_grounding --confirm-live-calls
+```
+
+## Troubleshooting
+
+User-visible failures contain a `be-...` or `fe-...` reference. Local logs are
+rotating newline-delimited JSON:
+
+```bash
+rg 'be-reference' backend/logs/backend.log*
+rg 'fe-reference' frontend/logs/frontend.log*
+```
+
+Chat text, credentials, tokens, and API response bodies are intentionally not
+included in browser error reports. Railway filesystems are ephemeral, so use a
+persistent volume or a production log sink before relying on file retention.
+
+## Contributing and repository contents
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the relevant `AGENTS.md` before
+changing code. In short:
+
+- Commit source, tests, reviewed migrations, docs, lockfiles, example env files,
+  and small reviewed corpus fixtures needed for reproducibility.
+- Do not commit secrets, real `.env` files, raw downloads, database dumps, logs,
+  virtual environments, `node_modules`, build output, or unreviewed large data.
+- Update docs and `.env.example` files whenever behavior or configuration
+  changes.
+- Keep the fast backend suite, Ruff, frontend lint, and frontend build green.
+
+## Further documentation
+
+| Document | Purpose |
+| --- | --- |
+| [Technical guide](docs/technical-guide.md) | Current architecture, data model, request flows, and algorithms |
+| [Project review](docs/project-review.md) | Prioritized release blockers and optimizations |
+| [Implementation checklist](docs/todo.md) | Remaining manual validation and deployment work |
+| [Supabase setup](docs/guides/supabase-setup.md) | Hosted Postgres and email auth setup |
+| [Backend README](backend/README.md) | Backend commands and module map |
+| [Frontend README](frontend/README.md) | Frontend commands and runtime notes |

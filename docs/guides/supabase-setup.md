@@ -19,7 +19,7 @@ We use Supabase for **Postgres** (users, chats, source documents, chunks, embedd
 
 ## 3. Collect credentials
 
-You need these values in backend and frontend env config (exact variable names will live in each service's settings module once the app is built).
+You need these values in the backend and frontend environment files.
 
 | Value | Where to find it | Used by |
 | ----- | ---------------- | ------- |
@@ -59,6 +59,7 @@ Alembic migrations create and update:
 - HNSW and GIN indexes
 - chat and citation tables
 - row-level security policies
+- the trigger that synchronizes Supabase Auth users into `public.users`
 
 Use the direct/session database connection string for Alembic. Do not use the transaction pooler connection string for migrations.
 

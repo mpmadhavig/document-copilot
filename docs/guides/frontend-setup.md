@@ -1,29 +1,38 @@
-# Frontend setup
+# Frontend setup guide
 
-This project uses a Vite + React SPA because the frontend is an internal tool that mainly needs fast iteration, authenticated app flows, and a clean connection to the FastAPI backend. We do not need the extra server-rendering, SEO, or full-stack routing features that Next.js is optimized for.
+The browser application is a Vite React SPA. It uses Supabase email auth and
+sends authenticated JSON/SSE requests to the separate FastAPI service.
 
-## Init (from empty `frontend/`)
+## First setup
 
 ```bash
 cd frontend
-pnpm create vite . --template react-ts
-pnpm install
-pnpm add react-router-dom @supabase/supabase-js
-pnpm add -D tailwindcss @tailwindcss/vite
-pnpm dlx shadcn@latest init
+cp .env.example .env
+# Set the public Supabase values and backend URL.
+pnpm install --frozen-lockfile
 ```
 
-## Run
+Do not put server credentials in the frontend environment. Any `VITE_*` value is
+available to browser code.
+
+## Run and check
 
 ```bash
-cd frontend
-pnpm install
 pnpm dev
-```
-
-## Check
-
-```bash
-pnpm tsc --noEmit
 pnpm lint
+pnpm build
 ```
+
+The application normally opens at <http://localhost:5173>; the backend's
+`ALLOWED_ORIGINS` must contain the exact browser origin.
+
+The project intentionally does not use a frontend test runner. Manually verify
+authentication, threads, streaming, errors, citations, source selection, and
+history reload after release-affecting changes.
+
+## Next steps
+
+- [Root setup and usage](../../README.md)
+- [Frontend command reference](../../frontend/README.md)
+- [Technical guide](../technical-guide.md)
+- [Contribution policy](../../CONTRIBUTING.md)

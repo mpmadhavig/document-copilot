@@ -1,94 +1,65 @@
 # Document Copilot frontend
 
+The frontend is a Vite React SPA for Supabase email authentication, private chat
+threads, AI SDK-compatible streaming, and citation/source inspection.
+
+Read the [root README](../README.md) for complete setup and
+[the technical guide](../docs/technical-guide.md) for the wire contract and
+component boundaries.
+
+## Configure and run
+
 ```bash
-pnpm install
+cp .env.example .env
+# Set the backend URL and public Supabase values.
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Browser, React, API, authentication, and chat transport failures are reported
-to the same-origin Vite server and written as rotating JSON lines to
-`logs/frontend.log`. User-facing errors include the matching `fe-...` reference:
+Open <http://localhost:5173>. Only browser-safe values belong in `.env`:
+
+- `VITE_API_BASE_URL`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Never place the service-role key, database URL, or OpenAI key in a `VITE_*`
+variable.
+
+## Checks
+
+```bash
+pnpm lint
+pnpm build
+```
+
+This project intentionally has no frontend test runner. Follow
+[`frontend/AGENTS.md`](AGENTS.md) and manually verify auth, chat, citations,
+source selection, errors, and reload behavior for release-affecting changes.
+
+## Runtime map
+
+```text
+src/Router.tsx             auth and protected chat routes
+src/components/auth/       session gate
+src/components/chat/       conversation, citation, source, and sidebar UI
+src/lib/env.ts             validated build-time configuration
+src/lib/http.ts            JSON fetch client and typed errors
+src/lib/chatTransport.ts   chat fetch errors and auth recovery
+src/lib/chat.ts            message and data-part types
+src/lib/supabase.ts        browser auth client
+server/clientLogPlugin.ts  same-origin Vite client-error collector
+```
+
+## Browser error logs
+
+During `pnpm dev` and `pnpm preview`, browser and React failures are posted to
+the same-origin Vite middleware and written as rotating JSON lines in
+`logs/frontend.log`:
 
 ```bash
 rg 'fe-reference-from-the-ui' logs/frontend.log*
 ```
 
-The collector is available under both `pnpm dev` and `pnpm preview`. It records
-diagnostic metadata only; prompts, passwords, tokens, and API response bodies
-are not included.
-
-## Vite notes
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+The collector excludes prompts, passwords, tokens, and API response bodies. The
+production serving/logging decision is still a release blocker; see the
+[project review](../docs/project-review.md).

@@ -2,6 +2,9 @@
 
 Work top to bottom. Each phase unlocks the next. Check items off as you go.
 
+For the latest production-readiness findings and optimization priorities, see
+[project-review.md](project-review.md).
+
 ## Where to start: backend, frontend, or both?
 
 **Start with foundation, then backend-led vertical slices.**
@@ -172,7 +175,7 @@ Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per an
 - [ ] Smoke-test all 10 example questions from the client brief
 - [ ] Confirm chat history persists across sessions
 - [ ] Confirm ~40-user scale assumptions (no hardcoded single-user shortcuts)
-- [ ] Basic structured logging on backend (`structlog`) for debugging failed turns
+- [x] Basic structured logging on backend (`structlog`) for debugging failed turns
 - [ ] Review latency: streaming starts within a few seconds for typical queries
 
 ---
@@ -193,7 +196,8 @@ Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per an
 | Doc | Purpose |
 | --- | ------- |
 | [client-brief.md](client-brief.md) | What Driftwood needs and example questions |
-| [architecture.md](architecture.md) | System design, data model, streaming contract |
+| [technical-guide.md](technical-guide.md) | Current system design, data model, algorithms, and streaming contract |
+| [project-review.md](project-review.md) | Release blockers, hardening, and optimization priorities |
 | [guides/supabase-setup.md](guides/supabase-setup.md) | Hosted Postgres + Auth |
 | [guides/backend-setup.md](guides/backend-setup.md) | FastAPI + Alembic commands |
 | [guides/frontend-setup.md](guides/frontend-setup.md) | Vite + React scaffold commands |
